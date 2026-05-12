@@ -1,0 +1,1427 @@
+---
+title: "BIO611_LLong_FinalProject"
+output: html_document
+date: "2026-04-22"
+---
+
+Open and load libraries 
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(janitor)
+library(corrplot)
+library(broom)
+library(corrplot)
+
+```
+
+read in data 
+```{r}
+gsd<-read.csv("C:/Users/LivLo/OneDrive/Documents/BIO611/Final Project/Friedrich_BehavGenetDogs_Phenotypes_25062019_UK.csv")
+alldogs<-read.csv("C:/Users/LivLo/OneDrive/C-BARQ-survey.csv")
+popularity<-read.csv("C:/Users/LivLo/OneDrive/AKC.csv", sep =";")
+shelter<-read.csv("C:/Users/LivLo/Downloads/Austin_Animal_Center_Intakes_(10_01_2013_to_05_05_2025)_20260423.csv")
+```
+
+View the data and format accordingly 
+```{r}
+#first gsd dataset 
+summary(gsd) #characters need to be formatted 
+gsd<-gsd%>%mutate_if(is.character,as.factor)
+
+#alldogs 
+summary(alldogs) #the same w/ many characters
+alldogs<- alldogs%>% mutate_if(is.character,as.factor)
+
+#popularity
+summary(popularity) #no character here!
+```
+
+Now we need to combine the first two datasets to determine our first question: 
+
+```{r}
+#rename the first column of a data set gsd
+colnames(gsd)[1] <- "German Shepherd"
+
+# Remove columns from alldogs that do not have variables that align with gsd dataset
+alldogs1 <- alldogs[, -c(2,4,8,9,10,16)]
+#remove columns form gsd that do not have the same variables as the alldogs1 dataset
+gsd1<- gsd[,-c(5,8,9,12)]
+
+#rename columns of both datasets to match
+library(dplyr)
+
+gsd1 <- gsd1 %>% 
+  rename(`Stranger-directed aggression` = SDA,
+    `Dog-directed aggression` = DDA,
+    `Stranger-directed fear` = SDF,
+    `Excitability` = Ex,
+    `Separation anxiety` = SA,
+    `Attachment/Attention-seeking` = AS,
+    `Chasing` = Ch,
+    `Dog-directed fear` = DDF,
+    `Touch-sensitivity` = TS)
+
+
+alldogs1 <- alldogs1 %>%
+  rename(
+    `Stranger-directed aggression` = StrangerDirectedAggression,
+    `Dog-directed aggression`      = DogDirectedAggression,
+    `Stranger-directed fear`       = StrangerDirectedFear,
+    `Dog-directed fear`            = DogDirectedFear,
+    `Chasing`                    = Chasing,
+    `Attachment/Attentio-seeking` = AttachmentAttentionSeeking,
+    `Separation anxiety`  = SeparationRelatedBehavior,
+    `Touch-sensitivity`          = TouchSensitivity,
+    `Excitability`              = Excitability)
+#Make column for gsd1 to have a column labeled breed with all values filled as German Shepherd
+gsd1 <- gsd1 %>%
+  mutate(Breed = "German Shepherd")
+
+gsd1<- gsd1[,-c(1)]
+
+#Now check that all data look right 
+glimpse(alldogs1)
+glimpse(gsd1)
+str(gsd1)
+str(alldogs1)
+##Everything looks good!
+```
+
+Now combine two datasets
+```{r}
+alldogs1$Group <- "AllDogs"
+gsd1$Group <- "GermanShepherd"
+
+alldogs1 <- alldogs1 %>%
+  rename(`Attachment/Attention-seeking` = `Attachment/Attentio-seeking`)
+
+#Check names 
+names(alldogs1)
+names(gsd1)
+##add group names 
+alldogs1$group <- "AllDogs"
+gsd1$group <- "GermanShepherd"
+
+#combine rows for 1 dataframe
+#combined <- bind_rows(alldogs1, gsd1) # did not work because factors and numeric datasets 
+
+#fixing data type
+alldogs1 <- alldogs1 %>%
+  mutate(across(-c(Breed, Group), ~ as.numeric(as.character(.))))
+gsd1 <- gsd1 %>%
+  mutate(across(-c(Breed, Group), ~ as.numeric(as.character(.))))
+#now combine 
+combined <- bind_rows(alldogs1, gsd1)
+
+
+#double check
+str(combined)
+
+#Clean names so they are easier to work with 
+
+
+combined <- clean_names(combined)
+```
+
+Performing a MANOVA to look at variables against breeds 
+```{r}
+manova_model <- manova(cbind(
+  stranger_directed_aggression,
+  dog_directed_aggression,
+  stranger_directed_fear,
+  dog_directed_fear,
+  chasing,
+  attachment_attention_seeking,
+  separation_anxiety,
+  touch_sensitivity,
+  excitability
+) ~ breed, data = combined)
+
+summary(manova_model)
+##determine which leads to significance 
+summary.aov(manova_model)
+
+
+#looking at cor matrix due to the extreme significance 
+vars <- c("stranger_directed_aggression",
+          "dog_directed_aggression",
+          "stranger_directed_fear",
+          "dog_directed_fear",
+          "chasing",
+          "attachment_attention_seeking",
+          "separation_anxiety",
+          "touch_sensitivity",
+          "excitability")
+
+cor_matrix <- cor(combined[, vars], use = "complete.obs")
+cor_matrix
+
+
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8)
+
+#making pretty labels 
+pretty_labels <- c(
+  "stranger_directed_aggression" = "Stranger-Directed Aggression",
+  "dog_directed_aggression" = "Dog-Directed Aggression",
+  "stranger_directed_fear" = "Stranger-Directed Fear",
+  "dog_directed_fear" = "Dog-Directed Fear",
+  "chasing" = "Chasing Behavior",
+  "attachment_attention_seeking" = "Attachment & Attention-Seeking",
+  "separation_anxiety" = "Separation Anxiety",
+  "touch_sensitivity" = "Touch Sensitivity",
+  "excitability" = "Excitability")
+#Putting them in the correlation matrix 
+colnames(cor_matrix) <- pretty_labels[colnames(cor_matrix)]
+rownames(cor_matrix) <- pretty_labels[rownames(cor_matrix)]
+
+#cleaning up the correlation matrix 
+
+
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "upper",
+  tl.cex = 0.9,        # slightly larger text
+  tl.col = "black",    # cleaner text color
+  tl.srt = 45,         # angled labels for readability
+  diag = FALSE,         # removes diagonal (optional)
+  addgrid.col = "white",
+  addgrid.lwd = 2,   # 👈 increase line width (default is ~1)
+  addCoef.col = "black" )
+
+#saving it 
+png("correlation_plot.png", width = 3000, height = 3000, res = 300)
+
+corrplot(
+  cor_matrix,
+  method = "square",
+  type = "upper",
+  tl.cex = 0.9,
+  tl.col = "black",
+  tl.srt = 45,
+  diag = FALSE,
+  addgrid.col = "white",
+  addgrid.lwd = 2,
+  addCoef.col = "black",
+  number.cex = 0.7,
+  number.digits = 2
+)
+
+dev.off()
+```
+Look at breeds specifically 
+
+```{r}
+##looking at breed correlations specifically (gsd v. all other breeds)
+
+
+
+#trying to fix the column names again *Sigh*
+colnames(cor_gsd) <- gsub("_", " ", colnames(cor_gsd))
+rownames(cor_gsd) <- gsub("_", " ", rownames (cor_gsd))
+#correlation per group
+cor_gsd <- cor(gsd, use = "pairwise.complete.obs")
+cor_all <- cor(all, use = "pairwise.complete.obs")
+
+##Visual result 
+corrplot(cor_gsd,
+         method = "circle",
+         type = "upper",
+         addCoef.col = "black",
+         title = "German Shepherd Dogs")
+
+corrplot(cor_all,
+         method = "color",
+         type = "upper",
+         addCoef.col = "black",
+         title = "All Other Dogs")
+
+
+
+##Just trying something 
+corrplot(cor_gsd, method = 'square', order = 'FPC', type = 'lower', diag = FALSE, addCoef.col = "black", tl.cex= 0.5)
+
+#trying to play with CIs
+testRes = cor.mtest(mtcars, conf.level = 0.95)
+
+## specialized the insignificant value according to the significant level
+corrplot(cor_all, p.mat = testRes$p, sig.level = 0.10, order = 'hclust', addrect = 2)
+
+```
+
+
+Now adding the two cor plots together 
+
+```{r}
+par(mfrow = c(1, 2))
+
+corrplot(cor_gsd,
+         method = "color",
+         type = "upper",
+         main = "German Shepherd Dogs")
+
+corrplot(cor_all,
+         method = "color",
+         type = "upper",
+         main = "All Other Dogs")
+
+par(mfrow = c(1, 1))
+```
+
+
+Comparing groups of breeds and their behavior 
+```{r}
+##High Drive Breeds and behavior
+combined$HighDrive <- ifelse(
+  combined$breed %in% c(
+    "Australian Cattle Dog","Australian Shepherd","Bearded Collie","Beauceron",
+    "Belgian Malinois","Belgian Sheepdog","Belgian Tervuren","Belgian Laekenois",
+    "Bergamasco Sheepdog","Berger Picard","Border Collie","Bouvier des Flandres",
+    "Briard","Cardigan Welsh Corgi","Collie","German Shepherd Dog",
+    "Icelandic Sheepdog","Miniature American Shepherd","Old English Sheepdog",
+    "Pembroke Welsh Corgi","Polish Lowland Sheepdog","Puli","Pumi",
+    "Pyrenean Shepherd","Shetland Sheepdog","Swedish Vallhund"),
+  "HighDrive",
+  "NotHighDrive")
+ #Anova Stranger Directed Aggression
+t.test(stranger_directed_aggression ~ HighDrive, data = combined)
+#Anova Dog Directed Aggression
+t.test( dog_directed_aggression~ HighDrive, data = combined)
+#Anova separation anxiety
+t.test( separation_anxiety~ HighDrive, data = combined)
+
+##Working Dog/Protection Dog Breeds and Behavior 
+combined$WorkingProt <- ifelse(
+  combined$breed %in% c(
+    "Akita","Alaskan Malamute","Anatolian Shepherd Dog","Bernese Mountain Dog",
+    "Black Russian Terrier","Boerboel","Boxer","Bullmastiff","Cane Corso",
+    "Chinook","Doberman Pinscher","Dogue de Bordeaux","German Pinscher",
+    "Giant Schnauzer","Great Dane","Great Pyrenees","Greater Swiss Mountain Dog",
+    "Komondor","Kuvasu","Leonberger","Mastiff","Neapolitan Mastiff",
+    "Newfoundland","Portuguese Water Dog","Rottweiler","Saint Bernard",
+    "Samoyed","Siberian Husky","Standard Schnauzer","Tibetan Mastiff"),
+  "Working/Protection",
+  "NotWorking")
+#Anova Stranger Directed Aggression
+t.test(stranger_directed_aggression ~ WorkingProt, data = combined)
+#Anova Dog Directed Aggression
+t.test( dog_directed_aggression~ WorkingProt, data = combined)
+#Anova separation anxiety
+t.test( separation_anxiety~ WorkingProt, data = combined)
+
+
+###ANOVA for comparison of all groups 
+#Anova Stranger Directed Aggression
+#model1.1 <- aov(stranger_directed_aggression ~ BreedGroup, data = combined)
+#summary(model1.1)
+
+#Anova Dog Directed Aggression
+#model1.2 <- aov(dog_directed_aggression ~ BreedGroup, data = combined)
+#summary(model1.2)
+#Anova separation anxiety
+#model1.3 <- aov(separation_anxiety~ BreedGroup, data = combined)
+#summary(model1.3)
+
+#TukeyHSD(model1.1)
+#TukeyHSD(model1.2)
+#TukeyHSD(model1.3)
+
+#autoplot(model1.1)#non-normal data, heteroscandasticity
+#autoplot(model1.2)#non-normal data, heteroscedasticity
+#autoplot(model1.3)#non-normal data, heteroscendasticity
+
+
+###NOTE: Run Below Chunk 1st Before Rest of this 
+
+
+
+##tring to fix...
+##Stranger Directed Aggression 
+kruskal.test(stranger_directed_aggression ~ BreedGroup, data = combined)
+pairwise.wilcox.test(combined$stranger_directed_aggression,
+                     combined$BreedGroup,
+                     p.adjust.method = "BH")
+##Dog-Directed Aggression
+kruskal.test(dog_directed_aggression ~ BreedGroup, data = combined)
+pairwise.wilcox.test(combined$dog_directed_aggression,
+                     combined$BreedGroup,
+                     p.adjust.method = "BH") 
+##Separation Anxiety
+kruskal.test(separation_anxiety ~ BreedGroup, data = combined)
+pairwise.wilcox.test(combined$separation_anxiety,
+                     combined$BreedGroup,
+                     p.adjust.method = "BH") 
+```
+Visualize the results
+```{r}
+##creating a 3-level group variable 
+combined$BreedGroup <- ifelse(
+  combined$breed %in% c("Australian Cattle Dog","Australian Shepherd","Bearded Collie","Beauceron",
+    "Belgian Malinois","Belgian Sheepdog","Belgian Tervuren","Belgian Laekenois",
+    "Bergamasco Sheepdog","Berger Picard","Border Collie","Bouvier des Flandres",
+    "Briard","Cardigan Welsh Corgi","Collie","German Shepherd Dog",
+    "Icelandic Sheepdog","Miniature American Shepherd","Old English Sheepdog",
+    "Pembroke Welsh Corgi","Polish Lowland Sheepdog","Puli","Pumi",
+    "Pyrenean Shepherd","Shetland Sheepdog","Swedish Vallhund"),
+  "HighDrive",
+  ifelse(
+    combined$breed %in% c("Akita","Alaskan Malamute","Anatolian Shepherd Dog","Bernese Mountain Dog","Black Russian Terrier","Boerboel","Boxer","Bullmastiff","Cane Corso",
+    "Chinook","Doberman Pinscher","Dogue de Bordeaux","German Pinscher",
+    "Giant Schnauzer","Great Dane","Great Pyrenees","Greater Swiss Mountain Dog",
+    "Komondor","Kuvasu","Leonberger","Mastiff","Neapolitan Mastiff",
+    "Newfoundland","Portuguese Water Dog","Rottweiler","Saint Bernard",
+    "Samoyed","Siberian Husky","Standard Schnauzer","Tibetan Mastiff"),
+    "Working/Protection",
+    "Other" ))
+#update labels 
+
+combined$BreedGroup <- factor(combined$BreedGroup,
+  levels = c("Other", "HighDrive", "Working/Protection"),
+  labels = c("Other Dogs", "High-Drive Breeds", "Working/Protection Breeds"))
+#Plot 
+#stranger directed agrgression
+p1 <- ggplot(combined, aes(x = BreedGroup, y = stranger_directed_aggression, fill = BreedGroup)) +
+  geom_boxplot(alpha = 0.5) +
+  geom_jitter(data = combined[sample(nrow(combined), 200), ],
+              aes(color = BreedGroup),
+              width = 0.2, alpha = 0.3) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "white") +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black") +
+  scale_fill_manual(values = c(
+    "Other Dogs" = "#BDBDBD",
+    "High-Drive Breeds" = "#2C7FB8",
+    "Working/Protection Breeds" = "#D95F0E"
+  )) +
+  scale_color_manual(values = c(
+    "Other Dogs" = "#BDBDBD",
+    "High-Drive Breeds" = "#2C7FB8",
+    "Working/Protection Breeds" = "#D95F0E"
+  )) +
+  labs(x = "Breed Group", y = "Stranger-Directed Aggression") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+p1
+#dog directed aggression
+ p2<-ggplot(combined, aes(x = BreedGroup, y = dog_directed_aggression, fill = BreedGroup)) +
+  geom_boxplot(alpha = 0.5) +
+  geom_jitter(data = combined[sample(nrow(combined), 200), ],
+              aes(color = BreedGroup),
+              width = 0.2, alpha = 0.3) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "white") +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black") +
+  scale_fill_manual(values = c(
+    "Other Dogs" = "#BDBDBD",
+    "High-Drive Breeds" = "#2C7FB8",
+    "Working/Protection Breeds" = "#D95F0E"
+  )) +
+  scale_color_manual(values = c(
+    "Other Dogs" = "#BDBDBD",
+    "High-Drive Breeds" = "#2C7FB8",
+    "Working/Protection Breeds" = "#D95F0E"
+  )) +
+  labs(x = "Breed Group", y = "Dog-Directed Aggression") +
+  theme_minimal() +
+  theme(legend.position = "none")
+p2
+#separation anxiety
+p3 <- ggplot(combined, aes(x = BreedGroup, y = separation_anxiety, fill = BreedGroup)) +
+  geom_boxplot(alpha = 0.5) +
+  geom_jitter(data = combined[sample(nrow(combined), 200), ],
+              aes(color = BreedGroup),
+              width = 0.2, alpha = 0.3) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "white") +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black") +
+  scale_fill_manual(values = c(
+    "Other Dogs" = "#BDBDBD",
+    "High-Drive Breeds" = "#2C7FB8",
+    "Working/Protection Breeds" = "#D95F0E"
+  )) +
+  scale_color_manual(values = c(
+    "Other Dogs" = "#BDBDBD",
+    "High-Drive Breeds" = "#2C7FB8",
+    "Working/Protection Breeds" = "#D95F0E"
+  )) +
+  labs(x = "Breed Group", y = "Separation Anxiety") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+p3
+
+
+```
+
+Comparing if one breed group is more likely to co-occur with multiple different behaviors 
+```{r}
+manova_model <- manova(cbind(stranger_directed_aggression,
+                              dog_directed_aggression,
+                              separation_anxiety) ~ BreedGroup,
+                       data = combined)
+
+summary(manova_model, test = "Pillai")
+#followup to look at groups specific results 
+summary.aov(manova_model)
+#looking at effect size 
+effectsize::eta_squared(manova_model)
+#Looking at missing data to ensure no group is the reason there is specific missing data 
+table(is.na(commbined$separation_anxiety), combined$BreedGroup)
+#checking full vs. partial case loss
+sum(complete.cases(combined[, c("stranger_directed_aggression",
+                            "dog_directed_aggression",
+                            "separation_anxiety")]))
+
+#Showing rda as results 
+##creating a behavior df to avoid errors and removing na for this only 
+rda_data <- combined[, c("stranger_directed_aggression",
+                         "dog_directed_aggression",
+                         "separation_anxiety",
+                         "BreedGroup")]
+
+rda_data <- na.omit(rda_data)
+
+#now running rda
+behav <- rda_data[, c("stranger_directed_aggression",
+                      "dog_directed_aggression",
+                      "separation_anxiety")]
+
+rda_model <- rda(behav ~ BreedGroup, data = rda_data)
+#Check significance of rda 
+anova(rda_model, permutations = 999)
+anova(rda_model, by = "axis", permutations = 999)
+
+#Plot rda 
+plot(rda_model, type = "n")
+points(rda_model, display = "sites", col = as.factor(rda_data$BreedGroup), pch = 16)
+ordispider(rda_model, rda_data$BreedGroup, col = "grey")
+text(rda_model, display = "bp", col = "black")
+
+
+#ugly!! using centroids only 
+plot(rda_model, type = "n")
+
+points(rda_model,
+       display = "sites",
+       col = "transparent")  # hides individuals completely
+
+ordispider(rda_model,
+           groups = rda_data$BreedGroup,
+           label = TRUE,
+           col = "grey")
+#Visualizing co-occuring behaviors for breed groups 
+library(MASS)
+
+lda_model <- lda(BreedGroup ~ stranger_directed_aggression +
+                                dog_directed_aggression +
+                                separation_anxiety,
+                 data = combined)
+
+lda_values <- predict(lda_model)
+
+plot(lda_values$x[,1], lda_values$x[,2],
+     col = as.numeric(combined$BreedGroup),
+     pch = 19,
+     xlab = "LD1",
+     ylab = "LD2")
+
+legend("topright",
+       legend = levels(combined$BreedGroup),
+       col = 1:length(levels(combined$BreedGroup)),
+       pch = 19)
+
+##using pairwise to examine 
+pairs(
+  combined[, c("stranger_directed_aggression",
+               "dog_directed_aggression")],
+  col = as.numeric(combined$BreedGroup),
+  pch = 19)
+#looking at breed group means plot
+summary_data <- combined %>%
+  group_by(BreedGroup) %>%
+  summarise(across(c(stranger_directed_aggression,
+                     dog_directed_aggression,
+                     separation_anxiety),
+                   mean, na.rm = TRUE)) %>%
+  pivot_longer(-BreedGroup, names_to = "Behavior", values_to = "Mean")
+
+ggplot(summary_data, aes(x = Behavior, y = Mean, group = BreedGroup)) +
+  geom_line(aes(color = BreedGroup)) +
+  geom_point(aes(color = BreedGroup)) +
+  theme_classic() +
+  labs(y = "Mean Score", x = "Behavior")
+```
+
+Plotting the information from the MANOVA 
+```{r}
+##Would not work first time so see below steps 
+#pca <- prcomp(combined[, c("stranger_directed_aggression",
+                         #  "dog_directed_aggression","separation_anxiety")],
+             # scale = TRUE)
+
+#scores <- data.frame(pca$x, BreedGroup = combined$BreedGroup)
+##Diagnose problem 
+colSums(is.na(combined[, c("stranger_directed_aggression",
+                           "dog_directed_aggression",
+                           "separation_anxiety")]))
+sapply(combined[, c("stranger_directed_aggression",
+                    "dog_directed_aggression",
+                    "separation_anxiety")],
+       function(x) sum(!is.finite(x)))
+##lots of NAs, so check for  complete cases
+
+pca_data <- combined[, c("stranger_directed_aggression",
+                         "dog_directed_aggression")]
+
+sum(complete.cases(pca_data))
+##proceed with complete cases 
+pca_clean <- na.omit(pca_data)
+
+pca <- prcomp(pca_clean, scale = TRUE)
+
+scores <- data.frame(pca$x,
+                     BreedGroup = combined$BreedGroup[complete.cases(pca_data)])
+##or use this 
+pca_data <- combined[, c("stranger_directed_aggression",
+                         "dog_directed_aggression")]
+
+for (i in seq_along(pca_data)) {
+  pca_data[is.na(pca_data[, i]), i] <- mean(pca_data[, i], na.rm = TRUE)
+}
+
+pca <- prcomp(pca_data, scale = TRUE)
+##Creating dataset for plotting 
+scores <- data.frame(
+  PC1 = pca$x[,1],
+  PC2 = pca$x[,2],
+  BreedGroup = combined$BreedGroup[complete.cases(pca_data)]
+)
+
+#Plot
+ggplot(scores, aes(PC1, PC2, color = BreedGroup)) +
+  geom_point(alpha = 0.4) +
+  theme_minimal()
+#Add confidence elipses
+ggplot(scores, aes(PC1, PC2, color = BreedGroup)) +
+  geom_point(alpha = 0.2) +
+  stat_ellipse(level = 0.95) +
+  theme_minimal()
+
+```
+Performing PERMANOVA since data are not normal 
+library(vegan)
+```{r}
+library(vegan)
+
+Y <- combined[, c("stranger_directed_aggression",
+                  "dog_directed_aggression",
+                  "separation_anxiety")]
+
+group <- combined$BreedGroup
+
+keep <- complete.cases(Y, group)
+
+adonis2(Y[keep, ] ~ group[keep],
+        method = "euclidean")
+
+```
+
+
+Correlation per breed group
+```{r}
+
+cor_by_group <- combined %>%
+  group_by(BreedGroup) %>%
+  summarise(
+    cor_SDA_DDA = cor(stranger_directed_aggression,
+                      dog_directed_aggression,
+                      use = "complete.obs"),
+    cor_SDA_SA = cor(stranger_directed_aggression,
+                     separation_anxiety,
+                     use = "complete.obs"),
+    cor_DDA_SA = cor(dog_directed_aggression,
+                     separation_anxiety,
+                     use = "complete.obs"))
+
+ 
+```
+
+Plotting correlations 
+
+```{r}
+
+plot_cor_group <- function(data, title) 
+  cor_mat <- cor(data[, c("stranger_directed_aggression",
+                          "dog_directed_aggression",
+                          "separation_anxiety")],
+                 use = "complete.obs")
+
+melted_cor <- as.data.frame(cor_mat) %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(-Var1, names_to = "Var2", values_to = "value")
+  
+ggplot(melted_cor, aes(Var1, Var2, fill = value)) +
+  geom_tile(width = 0.9, height = 0.9, color = "white") +  # 👈 smaller tiles
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Behavior Correlation Matrix",
+       x = "", y = "")
+
+
+##apply to each group
+library(reshape2)
+plot_cor_group(subset(combined, BreedGroup == "Other Dogs"),
+               "Other Dogs")
+
+plot_cor_group(subset(combined, BreedGroup == "High-Drive Breeds"),
+               "High-Drive Breeds")
+
+plot_cor_group(subset(combined, BreedGroup == "Working/Protection Breeds"),
+               "Working/Protection Breeds")
+```
+Trying new plotting 
+```{r}
+
+melted<-melt(cor_mat)
+ggplot(melted, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white", linewidth = 0.8) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),        # remove grid
+    panel.background = element_rect(fill = "white")
+  ) +
+  labs(title = "Behavior Correlation Matrix",
+       x = "", y = "")
+```
+
+```{r}
+
+
+plot_cor_group <- function(data, title) {
+  
+  cor_mat <- cor(data[, c("stranger_directed_aggression",
+                          "dog_directed_aggression",
+                          "separation_anxiety")],
+                 use = "complete.obs")
+  
+  melted_cor <- as.data.frame(cor_mat) %>%
+    rownames_to_column("Var1") %>%
+    pivot_longer(-Var1, names_to = "Var2", values_to = "value")
+  
+  ggplot(melted_cor, aes(Var1, Var2, fill = value)) +
+    geom_tile(width = 0.9, height = 0.9, color = "white") +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    theme_minimal() +
+    theme(panel.grid = element_blank()) +
+    labs(title = title, x = "", y = "")
+}
+
+plot_cor_group(subset(combined, BreedGroup == "Other Dogs"),
+               "Other Dogs")
+
+plot_cor_group(subset(combined, BreedGroup == "High-Drive Breeds"),
+               "High-Drive Breeds")
+
+plot_cor_group(subset(combined, BreedGroup == "Working/Protection Breeds"),
+               "Working/Protection Breeds")
+```
+
+```{r}
+# 1. Select and rename variables (clean labels)
+plot_data <- combined %>%
+  select(BreedGroup,
+         Stranger_Agg = stranger_directed_aggression,
+         Dog_Agg = dog_directed_aggression,
+         Sep_Anxiety = separation_anxiety)
+
+# 2. Compute correlations per group
+cor_data <- plot_data %>%
+  group_by(BreedGroup) %>%
+  group_modify(~ {
+    cor_mat <- cor(.x[, -1], use = "complete.obs")
+    
+    as.data.frame(cor_mat) %>%
+      rownames_to_column("Var1") %>%
+      pivot_longer(-Var1, names_to = "Var2", values_to = "value")
+  })
+
+```
+
+
+Checking to see if all variables made it into the column names of the plot_data 
+```{r}
+colnames(plot_data)
+```
+Making sure all variables are included in the correlation dataframe 
+```{r}
+cor_data <- plot_data %>%
+  group_by(BreedGroup) %>%
+  group_modify(~ {
+    
+    cor_mat <- cor(
+      .x[, c("Stranger_Agg", "Dog_Agg", "Sep_Anxiety")],
+      use = "complete.obs"
+    )
+    
+    as.data.frame(as.table(cor_mat))
+  })
+
+```
+
+Computing correlation 
+```{r}
+cor_data <- plot_data %>%
+  group_by(BreedGroup) %>%
+  group_modify(~ {
+    
+    cor_mat <- cor(
+      .x[, c("Stranger_Agg", "Dog_Agg", "Sep_Anxiety")],
+      use = "complete.obs"
+    )
+    
+    as.data.frame(as.table(cor_mat))
+  }) %>%
+  rename(
+    Var1 = Var1,
+    Var2 = Var2,
+    Correlation = Freq
+  )
+```
+
+
+Plot data 
+
+```{r}
+##ordering the variables so the plot looks clean 
+cor_data <- cor_data %>%
+  mutate(
+    Var1 = factor(Var1, levels = c("Stranger_Agg", "Dog_Agg", "Sep_Anxiety")),
+    Var2 = factor(Var2, levels = c("Stranger_Agg", "Dog_Agg", "Sep_Anxiety")))
+##Making the names cleaner 
+cor_data1 <- cor_data %>%
+  mutate(
+    Var1 = recode(Var1,
+      "Stranger_Agg" = "Stranger Aggression",
+      "Dog_Agg" = "Dog Aggression",
+      "Sep_Anxiety" = "Separation Anxiety"
+    ),
+    Var2 = recode(Var2,
+      "Stranger_Agg" = "Stranger Aggression",
+      "Dog_Agg" = "Dog Aggression",
+      "Sep_Anxiety" = "Separation Anxiety"
+    )
+  )
+
+##Making a heatmap with white space in between the blocks 
+
+ggplot(cor_data1, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile(color = "white", size = 1.2) +   # white borders = spacing
+  geom_text(aes(label = round(Correlation, 2)), size = 4) +
+  facet_wrap(~ BreedGroup) +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    limits = c(-1, 1)
+  ) +
+  coord_fixed() +  # makes tiles square
+  labs(
+    title = "Behavior Correlations by Breed Group",
+    x = NULL,
+    y = NULL,
+    fill = "Correlation"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),   # removes background grid
+    strip.text = element_text(face = "bold", size = 10),
+    strip.clip = "off", axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+  axis.text.y = element_text(angle = 0))
+
+```
+Looking at German Shepherds specifically 
+
+```{r}
+#Looking at the names in the combined dataset to filter out
+unique(combined$breed)
+
+#separating out the german shepherd dogs 
+
+gsd_data <- combined %>%
+  filter(breed == "German Shepherd")
+
+#Checking it worked 
+nrow(gsd_data)
+unique(gsd_data$breed) #it did!
+
+#Correlation between behaviors for german shepherds 
+behaviors <- gsd_data %>%
+  dplyr::select(stranger_directed_aggression,
+                dog_directed_aggression,
+                separation_anxiety)
+
+cor(behaviors, use = "complete.obs")
+
+#visualizing the correlation 
+library(corrplot)
+
+cor_mat <- cor(behaviors, use = "complete.obs")
+
+corrplot(cor_mat,
+         method = "circle",
+         type = "upper",
+         addCoef.col = "black",   # adds correlation values
+         tl.col = "black",        # label color
+         tl.srt = 45)             # rotate labels
+```
+Comparing cases when germanshepherds present with behavior 
+```{r}
+behavior_vars <- c(
+  "stranger_directed_aggression",
+  "dog_directed_aggression",
+  "separation_anxiety"
+)
+
+gs_counts <- gsd_data %>%
+  filter(breed == "German Shepherd") %>%
+  mutate(
+    behavior_sum = rowSums(across(all_of(behavior_vars)), na.rm = TRUE),
+    behavior_group = case_when(
+      behavior_sum == 0 ~ "0",
+      behavior_sum == 1 ~ "1",
+      behavior_sum >= 2 ~ "2+"
+    )
+  ) %>%
+  count(behavior_group)
+
+gs_counts
+#removing cases (variables only) when NA is present 
+behavior_vars1 <- c(
+  "stranger_directed_aggression",
+  "dog_directed_aggression",
+  "separation_anxiety"
+)
+
+gs_counts <- gsd_data %>%
+  filter(breed == "German Shepherd") %>%
+  
+  # convert to presence/absence (0/1)
+  mutate(across(all_of(behavior_vars1), ~ ifelse(. > 0, 1, 0))) %>%
+  
+  # remove rows with NA AFTER conversion
+  filter(if_all(all_of(behavior_vars1), ~ !is.na(.))) %>%
+  
+  # count number of behaviors present
+  mutate(
+    behavior_sum = rowSums(across(all_of(behavior_vars1))),
+    behavior_group = case_when(
+      behavior_sum == 0 ~ "0",
+      behavior_sum == 1 ~ "1",
+      behavior_sum >= 2 ~ "2+"
+    )
+  ) %>%
+  
+  count(behavior_group)
+#visualizing 
+ggplot(gs_counts, aes(x = "", y = n, fill = behavior_group)) +
+  geom_bar(stat = "identity", position = "fill", width = 0.6) +
+  scale_fill_viridis_d(option = "D") +
+  labs(x = NULL, y = "Proportion of German Shepherds", fill = "Behavior count") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw()
+
+ggsave("gs_behavior_plot.png", width = 6, height = 4, dpi = 300)
+```
+
+Looking at German Shepherd Breed Vs. Other breeds 
+```{r}
+behavior_vars1 <- c(
+  "stranger_directed_aggression",
+  "dog_directed_aggression",
+  "separation_anxiety"
+)
+
+chi_data <- combined %>%
+  
+  # keep only herding breeds
+  filter(BreedGroup == "High-Drive Breeds") %>%
+  
+  # define comparison groups
+  mutate(breed_compare = ifelse(breed == "German Shepherd",
+                               "German Shepherd",
+                               "Other Herding")) %>%
+  
+  # convert to presence/absence
+  mutate(across(all_of(behavior_vars1), ~ ifelse(. > 0, 1, 0))) %>%
+  
+  # remove NA rows
+  filter(if_all(all_of(behavior_vars1), ~ !is.na(.))) %>%
+  
+  # count behaviors
+  mutate(
+    behavior_sum = rowSums(across(all_of(behavior_vars1))),
+    behavior_group = case_when(
+      behavior_sum == 0 ~ "0",
+      behavior_sum == 1 ~ "1",
+      behavior_sum >= 2 ~ "2+"
+    )
+  ) %>%
+  
+  count(breed_compare, behavior_group)
+#adding in german shepherds 
+#make a column for gs so that row names match 
+gs_counts <- gs_counts %>%
+  mutate(breed_compare = "German Shepherd") %>%
+  dplyr::select(breed_compare, behavior_group, n)
+#combining with other data 
+chi_full <- bind_rows(gs_counts, chi_data)
+
+```
+
+Converting to a contingency table 
+```{r}
+mat <- chi_full %>%
+  tidyr::pivot_wider(names_from = behavior_group,
+                     values_from = n,
+                     values_fill = 0)
+
+chi_mat <- as.matrix(mat[, -1])
+rownames(chi_mat) <- mat$breed_compare
+
+chisq.test(chi_mat)
+
+#What drives the difference 
+chisq.test(chi_mat)$stdres
+
+#####plotting the differences#####
+
+# convert counts to proportions within each breed group
+plot_data <- chi_full %>%
+  group_by(breed_compare) %>%
+  mutate(prop = n / sum(n))
+
+# stacked proportional bar plot
+ggplot(plot_data, aes(x = breed_compare, y = prop, fill = behavior_group)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_viridis_d(option = "D") +
+  labs(
+    x = "Breed Group",
+    y = "Proportion of Dogs",
+    fill = "Number of Behaviors"
+  ) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw()
+ggsave("herding_behavior_plot.png", width = 6, height = 4, dpi = 300)
+
+```
+
+Using logistic regression to determine if there is a difference across breeds for 2+ behaviors within the herding group (behavior 2+ is coded as 1 and all other possibilities as 0)
+
+```{r}
+behavior_vars1 <- c(
+  "stranger_directed_aggression",
+  "dog_directed_aggression",
+  "separation_anxiety"
+)
+
+#making sure breed is a factor 
+model_data$breed <- as.factor(model_data$Breed)
+
+#adding german shepherds to model data 
+model_data <- combined %>%
+  filter(BreedGroup == "High-Drive Breeds" | breed == "German Shepherd") %>%
+  
+  mutate(across(all_of(behavior_vars1), ~ ifelse(. > 0, 1, 0))) %>%
+  
+  filter(if_all(all_of(behavior_vars1), ~ !is.na(.))) %>%
+  
+  mutate(
+    behavior_sum = rowSums(across(all_of(behavior_vars1))),
+    two_plus = ifelse(behavior_sum >= 2, 1, 0),
+    breed = as.factor(breed) )
+#setting germanshepherds as the reference data 
+model_data$breed <- relevel(model_data$breed, ref = "German Shepherd")
+
+#running the model 
+model <- glm(two_plus ~ breed, data = model_data, family = binomial)
+summary(model)
+
+#converting to odds ratio 
+exp(coef(model))
+#adding confidence intervals 
+exp(confint(model))
+
+#table for results 
+#changing name 
+library(dplyr)
+library(stringr)
+library(broom)
+library(gt)
+
+glm_table_clean <- tidy(model) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    term = str_remove(term, "^breed"),
+    term = str_replace_all(term, "_", " "),
+    reference = "German Shepherd (baseline)",
+    sig = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01  ~ "**",
+      p.value < 0.05  ~ "*",
+      TRUE ~ "ns" ))
+
+table_img2 <- glm_table_clean %>%
+  gt()
+
+gtsave(table_img2, "glm_table2.png")
+#visualizing with a forest plot 
+
+#step 1:extract odds ratio and CIS
+
+or_df <- data.frame(
+  term = names(coef(model)),
+  estimate = coef(model)
+) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    OR = exp(estimate)
+  )
+
+# Add confidence intervals
+ci <- exp(confint(model))
+
+or_df$CI_low <- ci[-1, 1]
+or_df$CI_high <- ci[-1, 2]
+
+# Clean breed names
+or_df$breed <- gsub("breed", "", or_df$term)
+
+
+#Strep 2: plot!
+ggplot(or_df, aes(x = reorder(breed, OR), y = OR)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = 0.2) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  scale_y_log10() +   #  KEY FIX
+  coord_flip() +
+  theme_minimal()
+
+#excluding breeds with small number of samples to reduce plotting unstable estimates 
+or_df_clean <- or_df %>%
+  filter(CI_high < 100)   # adjust threshold
+
+#replotting to fix
+ggplot(or_df_clean, aes(x = reorder(breed, OR), y = OR)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = 0.2) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  scale_y_log10() +   
+  coord_flip() +
+  labs(
+    x = "Herding breed",
+    y = "Likelihood of showing 2+ behaviors (relative to German Shepherd)" )+
+  theme_bw()
+ggsave("my_plot.png")
+```
+
+Looking at the populatrity data 
+
+```{r}
+#viewing the data to determine how to clean
+str(popularity)
+glimpse(popularity)
+
+#putting it into long format 
+
+df_long <- popularity %>%
+  pivot_longer(
+    cols = starts_with("X"),
+    names_to = "Year",
+    values_to = "Popularity" )
+#cleaning date names 
+df_long <- df_long %>%
+  mutate(Year = as.numeric(sub("X", "", Year)))
+#adding in column name for breed group 
+popularity <- popularity %>%
+  mutate(BreedGroup = case_when(
+    Breed %in% c("Australian Cattle Dog","Australian Shepherd","Bearded Collie","Beauceron",
+    "Belgian Malinois","Belgian Sheepdog","Belgian Tervuren","Belgian Laekenois",
+    "Bergamasco Sheepdog","Berger Picard","Border Collie","Bouvier des Flandres",
+    "Briard","Cardigan Welsh Corgi","Collie","German Shepherd Dog",
+    "Icelandic Sheepdog","Miniature American Shepherd","Old English Sheepdog",
+    "Pembroke Welsh Corgi","Polish Lowland Sheepdog","Puli","Pumi",
+    "Pyrenean Shepherd","Shetland Sheepdog","Swedish Vallhund") ~ "HighDrive",
+    Breed %in% c("Akita","Alaskan Malamute","Anatolian Shepherd Dog","Bernese Mountain Dog","Black Russian Terrier","Boerboel","Boxer","Bullmastiff","Cane Corso",
+    "Chinook","Doberman Pinscher","Dogue de Bordeaux","German Pinscher",
+    "Giant Schnauzer","Great Dane","Great Pyrenees","Greater Swiss Mountain Dog",
+    "Komondor","Kuvasz","Leonberger","Mastiff","Neapolitan Mastiff",
+    "Newfoundland","Portuguese Water Dog","Rottweiler","Saint Bernard",
+    "Samoyed","Siberian Husky","Standard Schnauzer","Tibetan Mastiff") ~ "Working/Protection",
+    TRUE ~ "Other"
+  ))
+
+
+#Aggregate by year and breed group
+pop_grouped <- df_long %>%
+  group_by(Year, BreedGroup) %>%
+  summarise(Total = sum(Popularity, na.rm = TRUE), .groups = "drop")
+
+#Creating a stacked area chart
+
+ggplot(pop_grouped, aes(x = Year, y = Total, fill = BreedGroup)) +
+  geom_area(alpha = 0.9) +
+  scale_fill_viridis_d(option = "D") +
+  labs(
+    x = "Year",
+    y = "AKC Popularity (total registrations)",
+    fill = "Breed group"
+  ) +
+  theme_bw()
+
+ggsave("my_pop_plot.png")
+
+
+```
+#glm to examine if breed group probabilites of dogs over time 
+```{r}
+#yearly composition
+df_year_group <- df_long %>%
+  group_by(Year, BreedGroup) %>%
+  summarise(Total = sum(Popularity, na.rm = TRUE), .groups = "drop")
+#converting to proportions 
+df_year_group <- df_year_group %>%
+  group_by(Year) %>%
+  mutate(Prop = Total / sum(Total))
+#running model 
+model <- glm(Prop ~ Year * BreedGroup, data = df_year_group)
+summary(model)
+
+#adding predictions 
+predict(model)
+
+#now plot 
+df_year_group$pred <- predict(model) #placing predictions in df
+
+#Making a prediction grid 
+newdata <- expand.grid(
+  Year = seq(min(df_year_group$Year), max(df_year_group$Year), by = 1),
+  BreedGroup = unique(df_year_group$BreedGroup))
+
+newdata$pred <- predict(model, newdata = newdata)
+
+#ploting model based trends 
+
+ggplot(newdata, aes(x = Year, y = pred, color = BreedGroup)) +
+  geom_line(linewidth = 1.2) +
+  labs(
+    x = "Year",
+    y = "Predicted proportion of AKC breeds",
+    color = "Breed group",
+    title = "Model-estimated changes in breed group composition over time"
+  ) +
+  theme_classic()
+
+```
+
+```{r}
+library(mgcv)
+#factoring breed group 
+df_year_group$BreedGroup <- as.factor(df_year_group$BreedGroup)
+#modeling with non linear changes 
+model_gam <- gam(
+  Prop ~ BreedGroup + s(Year, by = BreedGroup),
+  data = df_year_group,
+  method = "REML"
+)
+
+#Creating prediction grid
+newdata <- expand.grid(
+  Year = seq(min(df_year_group$Year),
+             max(df_year_group$Year),
+             by = 1),
+  BreedGroup = unique(df_year_group$BreedGroup)
+)
+
+#getting predictions 
+newdata$pred <- predict(model_gam, newdata = newdata, type = "response")
+
+#plotting with raw data 
+ggplot() +
+  geom_area(data = df_year_group,
+            aes(x = Year, y = Prop, fill = BreedGroup),
+            alpha = 0.25) +
+  geom_line(data = newdata,
+            aes(x = Year, y = pred, color = BreedGroup),
+            linewidth = 1.3) +
+  labs(
+    x = "Year",
+    y = "Proportion",
+    title = "AKC breed group composition: observed data and GAM smoothed trends"
+  ) +
+  theme_minimal()
+
+```
+
+
+Making a mew modeling plot that is easier to understand 
+
+```{r}
+#modeling with line proportions 
+ggplot(df_year_group, aes(x = Year, y = Prop,
+                          color = BreedGroup,
+                          linetype = BreedGroup)) +
+  geom_line(linewidth = 1.2) +
+  scale_color_viridis_d() +
+  theme_classic() +
+  theme(
+    legend.position = "right",
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 13)
+  ) +
+  labs(
+    x = "Year",
+    y = "Proportion",
+    color = "Breed group",
+    linetype = "Breed group"
+  )
+
+ggsave("my_pop_plot2.png")
+
+```
+Looking at shelter data 
+```{r}
+#examine the data's characteristics 
+str(shelter)
+summary(shelter)
+
+##filtering to dogs only 
+shelter_dogs <- shelter %>%
+  dplyr::filter(Animal.Type == "Dog")
+
+##extracting primary breed from the breed column 
+library(stringr)
+
+shelter_dogs <- shelter_dogs %>%
+  mutate(Breed_clean = str_split(Breed, "/| Mix", simplify = TRUE)[,1])
+
+#add in breed group classification 
+shelter_dogs <- shelter_dogs %>%
+  mutate(BreedGroup = case_when(
+    Breed_clean %in% c(
+      "Australian Cattle Dog","Australian Shepherd","Bearded Collie","Beauceron",
+    "Belgian Malinois","Belgian Sheepdog","Belgian Tervuren","Belgian Laekenois",
+    "Bergamasco Sheepdog","Berger Picard","Border Collie","Bouvier des Flandres",
+    "Briard","Cardigan Welsh Corgi","Collie","German Shepherd Dog",
+    "Icelandic Sheepdog","Miniature American Shepherd","Old English Sheepdog",
+    "Pembroke Welsh Corgi","Polish Lowland Sheepdog","Puli","Pumi",
+    "Pyrenean Shepherd","Shetland Sheepdog","Swedish Vallhund"
+    ) ~ "HighDrive",
+
+    Breed_clean %in% c(
+      "Akita","Alaskan Malamute","Anatolian Shepherd Dog","Bernese Mountain Dog","Black Russian Terrier","Boerboel","Boxer","Bullmastiff","Cane Corso",
+    "Chinook","Doberman Pinscher","Dogue de Bordeaux","German Pinscher",
+    "Giant Schnauzer","Great Dane","Great Pyrenees","Greater Swiss Mountain Dog",
+    "Komondor","Kuvasz","Leonberger","Mastiff","Neapolitan Mastiff",
+    "Newfoundland","Portuguese Water Dog","Rottweiler","Saint Bernard",
+    "Samoyed","Siberian Husky","Standard Schnauzer","Tibetan Mastiff"
+    ) ~ "Working/Protection",
+
+    TRUE ~ "Other"
+  ))
+
+##extracting time variable and convert to year only 
+
+shelter_dogs <- shelter_dogs %>%
+  mutate(Year = as.numeric(str_extract(MonthYear, "\\d{4}")))
+
+##calculate shelter proportions by breed group 
+shelter_grouped <- shelter_dogs %>%
+  group_by(Year, BreedGroup) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Year) %>%
+  mutate(prop = n / sum(n))
+
+##plot change over time 
+ggplot(shelter_grouped,
+       aes(x = Year, y = prop,
+           color = BreedGroup,
+           linetype = BreedGroup)) +
+  geom_line(linewidth = 1.2) +
+  scale_color_viridis_d(option = "D") +
+  theme_classic() +
+  labs(
+    x = "Year",
+    y = "Proportion of shelter intakes",
+    color = "Breed group",
+    linetype = "Breed group" )
+
+
+
+##save 
+ggsave ("shelter intake by breed group.png")
+```
+Examinging Shelter vs. AKC proportion ratio to answer the question about if the proportion of each breed group is as expected 
+
+
+```{r}
+#examining overall AKC proportions as a baseline 
+akc_prop <- df_year_group %>%
+  group_by(BreedGroup) %>%
+  summarise(akc_prop = mean(Prop, na.rm = TRUE), .groups = "drop")
+
+#making the shetler proportions 
+shelter_prop <- shelter_grouped %>%
+  group_by(BreedGroup) %>%
+  summarise(shelter_prop = mean(prop, na.rm = TRUE), .groups = "drop")
+
+#adding the data frames together 
+ratio_df <- left_join(shelter_prop, akc_prop, by = "BreedGroup")
+
+#computing the ratio of over/under representation 
+ratio_df <- ratio_df %>%
+  mutate(
+    ratio = shelter_prop / akc_prop )
+
+#PLotting the ratio 
+
+ggplot(ratio_df,
+       aes(x = BreedGroup, y = ratio, fill = BreedGroup)) +
+  geom_col(color = "black", width = 0.7) +
+  geom_hline(yintercept = 1, linetype = "dashed", linewidth = 1) +
+  scale_fill_viridis_d(option = "D") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none",   # remove redundant legend
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 13)
+  ) +
+  labs(
+    x = "Breed group",
+    y = "Shelter / AKC ratio"
+  )
+ggsave ("ratio_AKC_Shelter.png")
+```
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
